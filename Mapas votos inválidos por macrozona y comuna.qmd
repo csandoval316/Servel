@@ -1,0 +1,278 @@
+---
+title: "Mapas de Votos Inválidos (Nulos + Blancos) Elección 2024"
+author: "Cristian Sandoval Araya"
+date: "`r Sys.Date()`" #este es un comando para que aparezca la fecha actual
+lang: es
+format: 
+  html:
+    title-block-banner: "#ffffff" #el color de fondo del banner
+    smooth-scroll: true
+    toc: true #tabla de contenido
+    toc-depth: 6 #niveles de la tabla de contenido
+    toc-location: right #la ubicación de la tabla
+    number-sections: true #que enumere las secciones
+    number-depth: 6
+    code-fold: true #que los códigos se muestren pero ocultos
+    bibliography: ref.bib #se refiere a citas en formato BibTeX
+    csl: apa-numeric-superscript.csl #Formato de la cita
+    theme: cosmo #el tema general, hay muchos tipos
+    fig-cap-location: bottom #la ubicación del pie de nota de las figuras/gráficos
+    self-contained: false
+    df_print: paged
+editor: visual
+
+#    css: styles.css
+execute:
+  warning: false #que no se muestren los warning
+  message: false #que no se muestren otros mensajes
+  fig-width: 8 #el ancho de la figura/gráfico
+  fig-height: 6 #el alto de la figura/gráfico
+---
+
+
+# Mapas de votación inválida por macrozona.
+
+El presente documento tiene como objetivo complementar la información de la presentación Power Point sobre el análisis del voto inválido en las elecciones Municipales y de Gobierno Regional del año 2024, en específico mostrando de modo interactivo los resultados a nivel comunal para cada macrozona del país.
+
+Todos los resultados que se presentan a continución provienen de bases de datos públicas que se encuentran disponibles en el sitio web del Servicio Electoral.
+
+## Código de cálculos previos.
+
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(car)
+library(stringr)
+library(writexl)
+library(openxlsx)
+library(tools)
+library(sf)
+library(ggplot2)
+library(leaflet)
+library(RColorBrewer)
+library(purrr)
+
+```{r}
+install_and_load <- function(package) {
+  if (!require(package, character.only = TRUE)) {
+    utils::install.packages(package)
+    library(package, character.only = TRUE)
+  }
+}
+
+# Lista de paquetes para ser instalados y cargados
+packages <- c("dplyr",
+              "readxl", 
+              "tidyverse", 
+              "car",
+            "stringr",
+            "writexl",
+            "openxlsx",
+            "tools", 
+            "sf", 
+            "ggplot2",
+            "leaflet",
+            "RColorBrewer",
+            "purrr",
+            "httr"
+            )
+
+# Aplica la función a cada paquete
+invisible(capture.output(sapply(packages, install_and_load)))
+```
+
+
+
+```{r, results = 'hide'}
+
+url <- "https://github.com/csandoval316/Servel/raw/775ef36778e5d4bbdab69040f167ac2b4c463df8/Base_mapas.xlsx"
+
+# Descargar el archivo temporalmente
+temp_file <- tempfile(fileext = ".xlsx")
+GET(url, write_disk(temp_file, overwrite = TRUE))
+
+# Leer el archivo Excel
+Base_mapas <- read_excel(temp_file)
+
+comunas <- st_read("data/Mapas Comunales/comunas.shp")
+str(comunas)
+
+Base_mapas <- Base_mapas %>% 
+  dplyr::select(cod_comuna, Comuna,TIPO_COMUNA,Región,macrozona,Porc_inválidos_GORE,Porc_inválidos_ALCALDE,Porc_inválidos_CONCEJAL,Porc_inválidos_CORE)
+
+```
+
+```{r, results = 'hide'}
+Base_mapas2 <- comunas %>%
+  inner_join(Base_mapas, by = "cod_comuna")
+
+Base_mapas2 <- Base_mapas2 %>% filter(codregion != 0) # Eliminamos la región 0 ya que no podremos georeferenciarla, es básicamente un NA
+
+###Paleta de colores
+bins_part<- c(0,5,10,15,20,25,30,35,40,45)
+pal_par_mc <- colorBin(rev(brewer.pal(11, "RdYlGn")),  # Invierte los colores
+                       domain = Base_mapas2$Porc_invalidos, 
+                       bins = bins_part, 
+                       na.color = "transparent")
+
+Base_mapas2 <- st_as_sf(Base_mapas2, coords = c("lon", "lat"), crs = 4326)
+```
+
+
+
+## Mapa Región Metropolitana
+```{r}
+Base_mapas_RM <- Base_mapas2 %>%
+  filter(macrozona=="Metropolitana")
+
+Base_mapas_RM_wgs84 <- st_transform(Base_mapas_RM, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_RM_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+## Mapa Zona Norte
+```{r}
+Base_mapas_Norte <- Base_mapas2 %>%
+  filter(macrozona=="Norte")
+
+Base_mapas_Norte_wgs84 <- st_transform(Base_mapas_Norte, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Norte_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+## Mapa Zona Centro
+```{r}
+Base_mapas_Centro <- Base_mapas2 %>%
+  filter(macrozona=="Centro")
+
+Base_mapas_Centro_wgs84 <- st_transform(Base_mapas_Centro, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Centro_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+## Mapa Zona Centro Sur
+```{r}
+Base_mapas_CentroSur <- Base_mapas2 %>%
+  filter(macrozona=="Centro-Sur")
+
+Base_mapas_CentroSur_wgs84 <- st_transform(Base_mapas_CentroSur, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_CentroSur_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+
+## Mapa Zona Sur
+```{r}
+Base_mapas_Sur <- Base_mapas2 %>%
+  filter(macrozona=="Sur")
+
+Base_mapas_Sur_wgs84 <- st_transform(Base_mapas_Sur, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Sur_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+## Mapa Zona Austral
+```{r}
+Base_mapas_Austral <- Base_mapas2 %>%
+  filter(macrozona=="Austral")
+
+Base_mapas_Austral_wgs84 <- st_transform(Base_mapas_Austral, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Austral_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
