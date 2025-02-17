@@ -1,0 +1,1707 @@
+---
+title: "Análisis votos inválidos - Elección Municipal y GORE 2024"
+author: "Cristian Sandoval"
+date: "2025-01-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Librerías
+```{r}
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(car)
+library(stringr)
+library(writexl)
+library(openxlsx)
+library(tools)
+library(sf)
+library(ggplot2)
+library(leaflet)
+library(RColorBrewer)
+library(purrr)
+```
+
+Importación Base de Datos Resultados
+```{r}
+#Base de datos Gobernadores Regionales
+GORE2024 <- read_excel("data/2024_11_GobernadoresRegionales_Datos_Eleccion.xlsx", 
+    skip = 4)
+
+#Base de datos Alcaldes
+ALCALDES2024 <- read_excel("data/2024_10_Alcaldes_Datos_Eleccion.xlsx", 
+    skip = 4)
+
+#Base de datos CONCEJALES
+CONCEJALES2024 <- read_delim("data/2024_10_Concejales_Votacion.txt", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+#Base de datos CONSEJEROS REGIONALES.
+CORE2024 <- read_delim("data/2024_10_ConsejerosRegionales_Votacion.txt", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+```
+
+1. Base de datos de Voto en Chile.
+
+Recodificación Tipo de Voto
+```{r}
+GORE2024$TipoVoto <- car::recode(GORE2024$Nombres,
+                                          "
+                                          'VOTOS EN BLANCO' = 'Voto blanco'; 
+                                          'VOTOS NULOS' = 'Voto nulo';
+                                          else = 'Voto válido'
+                                          ")
+
+ALCALDES2024$TipoVoto <- car::recode(ALCALDES2024$Nombres,
+                                          "
+                                          'VOTOS EN BLANCO' = 'Voto blanco'; 
+                                          'VOTOS NULOS' = 'Voto nulo';
+                                          else = 'Voto válido'
+                                          ")
+
+CONCEJALES2024$TipoVoto <- car::recode(CONCEJALES2024$Nombres,
+                                          "
+                                          'VOTOS EN BLANCO' = 'Voto blanco'; 
+                                          'VOTOS NULOS' = 'Voto nulo';
+                                          else = 'Voto válido'
+                                          ")
+
+CORE2024$TipoVoto <- car::recode(CORE2024$Nombres,
+                                          "
+                                          'VOTOS EN BLANCO' = 'Voto blanco'; 
+                                          'VOTOS NULOS' = 'Voto nulo';
+                                          else = 'Voto válido'
+                                          ")
+
+colnames(GORE2024)
+colnames(ALCALDES2024)
+colnames(CONCEJALES2024)
+colnames(CORE2024)
+```
+
+2. Transformación de la base de datos
+
+2.1. Base GORE2024
+```{r}
+#Transformación en valor único por mesa.
+GORE2024_2 <- GORE2024 %>%
+  group_by(Mesa, `Nro Región`, Región, `Circunscripción senatorial`, Distrito, Comuna, `Circunscripción electoral`, Local, TipoVoto) %>%  
+  summarise(Votos = sum(Votos, na.rm = TRUE), .groups = "drop") %>% 
+  pivot_wider(names_from = TipoVoto, values_from = Votos, values_fill = list(Votos = 0))
+```
+
+Revisión de cantidades totales de casos. Según el dashboard de Servel, las cantidades deben ser:
+
+Votos Blancos: 976.788
+Votos Nulos: 1.351.323
+Votos válidos: 10.794.150
+```{r}
+resumen_votos1 <- GORE2024_2 %>%
+  summarise(across(`Voto blanco`:`Voto válido`, \(x) sum(x, na.rm = TRUE)))
+print(resumen_votos1)
+```
+
+
+
+2.2. Base ALCALDES2024
+```{r}
+#Transformación en valor único por mesa.
+ALCALDES2024_2 <- ALCALDES2024 %>%
+  group_by(Mesa, `Nro Región`, Región, `Circunscripción senatorial`, Distrito, Comuna, `Circunscripción electoral`, Local, TipoVoto) %>%  
+  summarise(Votos = sum(Votos, na.rm = TRUE), .groups = "drop") %>% 
+  pivot_wider(names_from = TipoVoto, values_from = Votos, values_fill = list(Votos = 0))
+```
+
+Revisión de cantidades totales de casos. Según el dashboard de Servel, las cantidades deben ser:
+
+Votos Blancos: 506.584
+Votos Nulos: 899.244
+Votos válidos: 11.711.228
+```{r}
+resumen_votos2 <- ALCALDES2024_2 %>%
+  summarise(across(`Voto blanco`:`Voto válido`, \(x) sum(x, na.rm = TRUE)))
+print(resumen_votos2)
+```
+
+
+2.3. Base CONCEJALES2024
+```{r}
+#Transformación en valor único por mesa.
+colnames(CONCEJALES2024)
+
+CONCEJALES2024_2 <- CONCEJALES2024 %>%
+  group_by(Mesa, `Nro Región`=nro, Región=Region, `Circunscripcion senatorial`, Distrito, Comuna, `Circunscripcion electoral`, Local, TipoVoto) %>%  
+  summarise(votos = sum(votos, na.rm = TRUE), .groups = "drop") %>% 
+  pivot_wider(names_from = TipoVoto, values_from = votos, values_fill = list(votos = 0))
+```
+
+Revisión de cantidades totales de casos. Según el dashboard de Servel, las cantidades deben ser:
+
+Votos Blancos: 1.109.413
+Votos Nulos: 1.666.572
+Votos válidos: 10.297.002
+```{r}
+resumen_votos3 <- CONCEJALES2024_2 %>%
+  summarise(across(`Voto blanco`:`Voto válido`, \(x) sum(x, na.rm = TRUE)))
+print(resumen_votos3)
+```
+
+
+2.4. Base CORE2024
+```{r}
+#Transformación en valor único por mesa.
+colnames(CORE2024)
+
+CORE2024_2 <- CORE2024 %>%
+  group_by(Mesa, `Nro Región`=nro, Región=Region, `Circunscripcion senatorial`, Comuna, `Circunscripcion electoral`, Local, TipoVoto) %>%  
+  summarise(votos = sum(votos, na.rm = TRUE), .groups = "drop") %>% 
+  pivot_wider(names_from = TipoVoto, values_from = votos, values_fill = list(votos = 0))
+```
+
+Revisión de cantidades totales de casos. Según el dashboard de Servel, las cantidades deben ser:
+
+Votos Blancos: 1.472.988
+Votos Nulos: 1.905.766
+Votos válidos: 9.731.542
+```{r}
+resumen_votos4 <- CORE2024_2 %>%
+  summarise(across(`Voto blanco`:`Voto válido`, \(x) sum(x, na.rm = TRUE)))
+print(resumen_votos4)
+```
+
+Todas las bases de datos coinciden con los datos publicados. Se limpia el environment
+```{r}
+rm(ALCALDES2024,CONCEJALES2024,CORE2024,GORE2024,resumen_votos1,resumen_votos2,resumen_votos3,resumen_votos4)
+```
+
+
+Limpieza de BBDDs nuevas.
+
+```{r}
+#Creación de una función para limpiar la variable Región
+# Definir la función que normaliza los nombres de las regiones
+normalizar_regiones <- function(df) {
+  df %>%
+    mutate(Región = case_when(
+      Región == "DE ANTOFAGASTA" ~ "Antofagasta",
+      Región == "DE ARICA Y PARINACOTA" ~ "Arica y Parinacota",
+      Región == "DE ATACAMA" ~ "Atacama",
+      Región == "DE AYSEN DEL GENERAL CARLOS IBAÑEZ DEL CAMPO" ~ "Aysén del General Carlos Ibáñez del Campo",
+      Región == "DE COQUIMBO" ~ "Coquimbo",
+      Región == "DE LA ARAUCANIA" ~ "La Araucanía",
+      Región == "DE LOS LAGOS" ~ "Los Lagos",
+      Región == "DE LOS RIOS" ~ "Los Ríos",
+      Región == "DE MAGALLANES Y DE LA ANTARTICA CHILENA" ~ "Magallanes y de la Antártica Chilena",
+      Región == "DE ÑUBLE" ~ "Ñuble",
+      Región == "DE TARAPACA" ~ "Tarapacá",
+      Región == "DE VALPARAISO" ~ "Valparaíso",
+      Región == "DEL BIOBIO" ~ "Biobío",
+      Región == "DEL LIBERTADOR GENERAL BERNARDO O'HIGGINS" ~ "Libertador General Bernardo O'higgins",
+      Región == "DEL MAULE" ~ "Maule",
+      Región == "METROPOLITANA DE SANTIAGO" ~ "Metropolitana de Santiago",
+      TRUE ~ Región
+    ))
+}
+
+# Lista de bases de datos
+bases <- list(
+  GORE2024_2 = GORE2024_2,
+  ALCALDES2024_2 = ALCALDES2024_2,
+  CONCEJALES2024_2 = CONCEJALES2024_2,
+  CORE2024_2 = CORE2024_2
+)
+
+# Aplicar la función a cada base de datos
+bases <- map(bases, normalizar_regiones)
+
+# Extraer nuevamente las bases de datos con sus nombres originales
+GORE2024_2 <- bases$GORE2024_2
+ALCALDES2024_2 <- bases$ALCALDES2024_2
+CONCEJALES2024_2 <- bases$CONCEJALES2024_2
+CORE2024_2 <- bases$CORE2024_2
+
+table(GORE2024_2$Región)
+
+```
+
+
+```{r}
+GORE2024_2$Comuna <- str_to_title(GORE2024_2$Comuna)
+ALCALDES2024_2$Comuna <- str_to_title(ALCALDES2024_2$Comuna)
+CONCEJALES2024_2$Comuna <- str_to_title(CONCEJALES2024_2$Comuna)
+CORE2024_2$Comuna <- str_to_title(CORE2024_2$Comuna)
+
+#Creación de una función para limpiar la variable Región
+# Definir la función que normaliza los nombres de las regiones
+normalizar_comunas <- function(df) {
+  df %>%
+    mutate(Comuna = case_when(
+      Comuna == 'Antofagasta' ~ 'Antofagasta',
+Comuna == 'Calama' ~ 'Calama',
+Comuna == 'Maria Elena' ~ 'María Elena',
+Comuna == 'Mejillones' ~ 'Mejillones',
+Comuna == 'Ollague' ~ 'Ollagüe',
+Comuna == 'San Pedro De Atacama' ~ 'San Pedro De Atacama',
+Comuna == 'Sierra Gorda' ~ 'Sierra Gorda',
+Comuna == 'Taltal' ~ 'Taltal',
+Comuna == 'Tocopilla' ~ 'Tocopilla',
+Comuna == 'Arica' ~ 'Arica',
+Comuna == 'Camarones' ~ 'Camarones',
+Comuna == 'General Lagos' ~ 'General Lagos',
+Comuna == 'Putre' ~ 'Putre',
+Comuna == 'Alto Del Carmen' ~ 'Alto Del Carmen',
+Comuna == 'Caldera' ~ 'Caldera',
+Comuna == 'Chañaral' ~ 'Chañaral',
+Comuna == 'Copiapo' ~ 'Copiapó',
+Comuna == 'Diego De Almagro' ~ 'Diego De Almagro',
+Comuna == 'Freirina' ~ 'Freirina',
+Comuna == 'Huasco' ~ 'Huasco',
+Comuna == 'Tierra Amarilla' ~ 'Tierra Amarilla',
+Comuna == 'Vallenar' ~ 'Vallenar',
+Comuna == 'Aysen' ~ 'Aysén',
+Comuna == 'Chile Chico' ~ 'Chile Chico',
+Comuna == 'Cisnes' ~ 'Cisnes',
+Comuna == 'Cochrane' ~ 'Cochrane',
+Comuna == 'Coyhaique' ~ 'Coyhaique',
+Comuna == 'Guaitecas' ~ 'Guaitecas',
+Comuna == 'Lago Verde' ~ 'Lago Verde',
+Comuna == "O'higgins" ~ "o'higgins",
+Comuna == 'Rio Ibañez' ~ 'Río Ibáñez',
+Comuna == 'Tortel' ~ 'Tortel',
+Comuna == 'Alto Biobio' ~ 'Alto Biobío',
+Comuna == 'Antuco' ~ 'Antuco',
+Comuna == 'Arauco' ~ 'Arauco',
+Comuna == 'Cabrero' ~ 'Cabrero',
+Comuna == 'Cañete' ~ 'Cañete',
+Comuna == 'Chiguayante' ~ 'Chiguayante',
+Comuna == 'Concepcion' ~ 'Concepción',
+Comuna == 'Contulmo' ~ 'Contulmo',
+Comuna == 'Coronel' ~ 'Coronel',
+Comuna == 'Curanilahue' ~ 'Curanilahue',
+Comuna == 'Florida' ~ 'Florida',
+Comuna == 'Hualpen' ~ 'Hualpén',
+Comuna == 'Hualqui' ~ 'Hualqui',
+Comuna == 'Laja' ~ 'Laja',
+Comuna == 'Lebu' ~ 'Lebu',
+Comuna == 'Los Alamos' ~ 'Los Álamos',
+Comuna == 'Los Angeles' ~ 'Los Angeles',
+Comuna == 'Lota' ~ 'Lota',
+Comuna == 'Mulchen' ~ 'Mulchén',
+Comuna == 'Nacimiento' ~ 'Nacimiento',
+Comuna == 'Negrete' ~ 'Negrete',
+Comuna == 'Penco' ~ 'Penco',
+Comuna == 'Quilaco' ~ 'Quilaco',
+Comuna == 'Quilleco' ~ 'Quilleco',
+Comuna == 'San Pedro De La Paz' ~ 'San Pedro De La Paz',
+Comuna == 'San Rosendo' ~ 'San Rosendo',
+Comuna == 'Santa Barbara' ~ 'Santa Bárbara',
+Comuna == 'Santa Juana' ~ 'Santa Juana',
+Comuna == 'Talcahuano' ~ 'Talcahuano',
+Comuna == 'Tirua' ~ 'Tirúa',
+Comuna == 'Tome' ~ 'Tomé',
+Comuna == 'Tucapel' ~ 'Tucapel',
+Comuna == 'Yumbel' ~ 'Yumbel',
+Comuna == 'Andacollo' ~ 'Andacollo',
+Comuna == 'Canela' ~ 'Canela',
+Comuna == 'Combarbala' ~ 'Combarbalá',
+Comuna == 'Coquimbo' ~ 'Coquimbo',
+Comuna == 'Illapel' ~ 'Illapel',
+Comuna == 'La Higuera' ~ 'La Higuera',
+Comuna == 'La Serena' ~ 'La Serena',
+Comuna == 'Los Vilos' ~ 'Los Vilos',
+Comuna == 'Monte Patria' ~ 'Monte Patria',
+Comuna == 'Ovalle' ~ 'Ovalle',
+Comuna == 'Paihuano' ~ 'Paiguano',
+Comuna == 'Punitaqui' ~ 'Punitaqui',
+Comuna == 'Rio Hurtado' ~ 'Río Hurtado',
+Comuna == 'Salamanca' ~ 'Salamanca',
+Comuna == 'Vicuña' ~ 'Vicuña',
+Comuna == 'Angol' ~ 'Angol',
+Comuna == 'Carahue' ~ 'Carahue',
+Comuna == 'Cholchol' ~ 'Cholchol',
+Comuna == 'Collipulli' ~ 'Collipulli',
+Comuna == 'Cunco' ~ 'Cunco',
+Comuna == 'Curacautin' ~ 'Curacautín',
+Comuna == 'Curarrehue' ~ 'Curarrehue',
+Comuna == 'Ercilla' ~ 'Ercilla',
+Comuna == 'Freire' ~ 'Freire',
+Comuna == 'Galvarino' ~ 'Galvarino',
+Comuna == 'Gorbea' ~ 'Gorbea',
+Comuna == 'Lautaro' ~ 'Lautaro',
+Comuna == 'Loncoche' ~ 'Loncoche',
+Comuna == 'Lonquimay' ~ 'Lonquimay',
+Comuna == 'Los Sauces' ~ 'Los Sauces',
+Comuna == 'Lumaco' ~ 'Lumaco',
+Comuna == 'Melipeuco' ~ 'Melipeuco',
+Comuna == 'Nueva Imperial' ~ 'Nueva Imperial',
+Comuna == 'Padre Las Casas' ~ 'Padre Las Casas',
+Comuna == 'Perquenco' ~ 'Perquenco',
+Comuna == 'Pitrufquen' ~ 'Pitrufquen',
+Comuna == 'Pucon' ~ 'Pucón',
+Comuna == 'Puren' ~ 'Purén',
+Comuna == 'Renaico' ~ 'Renaico',
+Comuna == 'Saavedra' ~ 'Saavedra',
+Comuna == 'Temuco' ~ 'Temuco',
+Comuna == 'Teodoro Schmidt' ~ 'Teodoro Schmidt',
+Comuna == 'Tolten' ~ 'Toltén',
+Comuna == 'Traiguen' ~ 'Traiguén',
+Comuna == 'Victoria' ~ 'Victoria',
+Comuna == 'Vilcun' ~ 'Vilcún',
+Comuna == 'Villarrica' ~ 'Villarrica',
+Comuna == 'Chepica' ~ 'Chépica',
+Comuna == 'Chimbarongo' ~ 'Chimbarongo',
+Comuna == 'Codegua' ~ 'Codegua',
+Comuna == 'Coinco' ~ 'Coinco',
+Comuna == 'Coltauco' ~ 'Coltauco',
+Comuna == 'Doñihue' ~ 'Doñihue',
+Comuna == 'Graneros' ~ 'Graneros',
+Comuna == 'La Estrella' ~ 'La Estrella',
+Comuna == 'Las Cabras' ~ 'Las Cabras',
+Comuna == 'Litueche' ~ 'Litueche',
+Comuna == 'Lolol' ~ 'Lolol',
+Comuna == 'Machali' ~ 'Machalí',
+Comuna == 'Malloa' ~ 'Malloa',
+Comuna == 'Marchigue' ~ 'Marchihue',
+Comuna == 'Mostazal' ~ 'Mostazal',
+Comuna == 'Nancagua' ~ 'Nancagua',
+Comuna == 'Navidad' ~ 'Navidad',
+Comuna == 'Olivar' ~ 'Olivar',
+Comuna == 'Palmilla' ~ 'Palmilla',
+Comuna == 'Paredones' ~ 'Paredones',
+Comuna == 'Peralillo' ~ 'Peralillo',
+Comuna == 'Peumo' ~ 'Peumo',
+Comuna == 'Pichidegua' ~ 'Pichidegua',
+Comuna == 'Pichilemu' ~ 'Pichilemu',
+Comuna == 'Placilla' ~ 'Placilla',
+Comuna == 'Pumanque' ~ 'Pumanque',
+Comuna == 'Quinta De Tilcoco' ~ 'Quinta De Tilcoco',
+Comuna == 'Rancagua' ~ 'Rancagua',
+Comuna == 'Rengo' ~ 'Rengo',
+Comuna == 'Requinoa' ~ 'Requínoa',
+Comuna == 'San Fernando' ~ 'San Fernando',
+Comuna == 'San Vicente' ~ 'San Vicente',
+Comuna == 'Santa Cruz' ~ 'Santa Cruz',
+Comuna == 'Ancud' ~ 'Ancud',
+Comuna == 'Calbuco' ~ 'Calbuco',
+Comuna == 'Castro' ~ 'Castro',
+Comuna == 'Chaiten' ~ 'Chaitén',
+Comuna == 'Chonchi' ~ 'Chonchi',
+Comuna == 'Cochamo' ~ 'Cochamó',
+Comuna == 'Curaco De Velez' ~ 'Curaco De Vélez',
+Comuna == 'Dalcahue' ~ 'Dalcahue',
+Comuna == 'Fresia' ~ 'Fresia',
+Comuna == 'Frutillar' ~ 'Frutillar',
+Comuna == 'Futaleufu' ~ 'Futaleufú',
+Comuna == 'Hualaihue' ~ 'Hualaihué',
+Comuna == 'Llanquihue' ~ 'Llanquihue',
+Comuna == 'Los Muermos' ~ 'Los Muermos',
+Comuna == 'Maullin' ~ 'Maullín',
+Comuna == 'Osorno' ~ 'Osorno',
+Comuna == 'Palena' ~ 'Palena',
+Comuna == 'Puerto Montt' ~ 'Puerto Montt',
+Comuna == 'Puerto Octay' ~ 'Puerto Octay',
+Comuna == 'Puerto Varas' ~ 'Puerto Varas',
+Comuna == 'Puqueldon' ~ 'Puqueldón',
+Comuna == 'Purranque' ~ 'Purranque',
+Comuna == 'Puyehue' ~ 'Puyehue',
+Comuna == 'Queilen' ~ 'Queilén',
+Comuna == 'Quellon' ~ 'Quellón',
+Comuna == 'Quemchi' ~ 'Quemchi',
+Comuna == 'Quinchao' ~ 'Quinchao',
+Comuna == 'Rio Negro' ~ 'Río Negro',
+Comuna == 'San Juan De La Costa' ~ 'San Juan De La Costa',
+Comuna == 'San Pablo' ~ 'San Pablo',
+Comuna == 'Corral' ~ 'Corral',
+Comuna == 'Futrono' ~ 'Futrono',
+Comuna == 'La Union' ~ 'La Unión',
+Comuna == 'Lago Ranco' ~ 'Lago Ranco',
+Comuna == 'Lanco' ~ 'Lanco',
+Comuna == 'Los Lagos' ~ 'Los Lagos',
+Comuna == 'Mafil' ~ 'Máfil',
+Comuna == 'Mariquina' ~ 'Mariquina',
+Comuna == 'Paillaco' ~ 'Paillaco',
+Comuna == 'Panguipulli' ~ 'Panguipulli',
+Comuna == 'Rio Bueno' ~ 'Río Bueno',
+Comuna == 'Valdivia' ~ 'Valdivia',
+Comuna == 'Antartica' ~ 'Antártica',
+Comuna == 'Cabo De Hornos(Ex-Navarino)' ~ 'Cabo De Hornos',
+Comuna == 'Laguna Blanca' ~ 'Laguna Blanca',
+Comuna == 'Natales' ~ 'Natales',
+Comuna == 'Porvenir' ~ 'Porvenir',
+Comuna == 'Primavera' ~ 'Primavera',
+Comuna == 'Punta Arenas' ~ 'Punta Arenas',
+Comuna == 'Rio Verde' ~ 'Río Verde',
+Comuna == 'San Gregorio' ~ 'San Gregorio',
+Comuna == 'Timaukel' ~ 'Timaukel',
+Comuna == 'Torres Del Paine' ~ 'Torres Del Paine',
+Comuna == 'Cauquenes' ~ 'Cauquenes',
+Comuna == 'Chanco' ~ 'Chanco',
+Comuna == 'Colbun' ~ 'Colbún',
+Comuna == 'Constitucion' ~ 'Constitución',
+Comuna == 'Curepto' ~ 'Curepto',
+Comuna == 'Curico' ~ 'Curicó',
+Comuna == 'Empedrado' ~ 'Empedrado',
+Comuna == 'Hualañe' ~ 'Hualañé',
+Comuna == 'Licanten' ~ 'Licantén',
+Comuna == 'Linares' ~ 'Linares',
+Comuna == 'Longavi' ~ 'Longaví',
+Comuna == 'Maule' ~ 'Maule',
+Comuna == 'Molina' ~ 'Molina',
+Comuna == 'Parral' ~ 'Parral',
+Comuna == 'Pelarco' ~ 'Pelarco',
+Comuna == 'Pelluhue' ~ 'Pelluhue',
+Comuna == 'Pencahue' ~ 'Pencahue',
+Comuna == 'Rauco' ~ 'Rauco',
+Comuna == 'Retiro' ~ 'Retiro',
+Comuna == 'Rio Claro' ~ 'Río Claro',
+Comuna == 'Romeral' ~ 'Romeral',
+Comuna == 'Sagrada Familia' ~ 'Sagrada Familia',
+Comuna == 'San Clemente' ~ 'San Clemente',
+Comuna == 'San Javier' ~ 'San Javier',
+Comuna == 'San Rafael' ~ 'San Rafael',
+Comuna == 'Talca' ~ 'Talca',
+Comuna == 'Teno' ~ 'Teno',
+Comuna == 'Vichuquen' ~ 'Vichuquén',
+Comuna == 'Villa Alegre' ~ 'Villa Alegre',
+Comuna == 'Yerbas Buenas' ~ 'Yerbas Buenas',
+Comuna == 'Alhue' ~ 'Alhué',
+Comuna == 'Buin' ~ 'Buin',
+Comuna == 'Calera De Tango' ~ 'Calera De Tango',
+Comuna == 'Cerrillos' ~ 'Cerrillos',
+Comuna == 'Cerro Navia' ~ 'Cerro Navia',
+Comuna == 'Colina' ~ 'Colina',
+Comuna == 'Conchali' ~ 'Conchalí',
+Comuna == 'Curacavi' ~ 'Curacaví',
+Comuna == 'El Bosque' ~ 'El Bosque',
+Comuna == 'El Monte' ~ 'El Monte',
+Comuna == 'Estacion Central' ~ 'Estación Central',
+Comuna == 'Huechuraba' ~ 'Huechuraba',
+Comuna == 'Independencia' ~ 'Independencia',
+Comuna == 'Isla De Maipo' ~ 'Isla De Maipo',
+Comuna == 'La Cisterna' ~ 'La Cisterna',
+Comuna == 'La Florida' ~ 'La Florida',
+Comuna == 'La Granja' ~ 'La Granja',
+Comuna == 'La Pintana' ~ 'La Pintana',
+Comuna == 'La Reina' ~ 'La Reina',
+Comuna == 'Lampa' ~ 'Lampa',
+Comuna == 'Las Condes' ~ 'Las Condes',
+Comuna == 'Lo Barnechea' ~ 'Lo Barnechea',
+Comuna == 'Lo Espejo' ~ 'Lo Espejo',
+Comuna == 'Lo Prado' ~ 'Lo Prado',
+Comuna == 'Macul' ~ 'Macul',
+Comuna == 'Maipu' ~ 'Maipú',
+Comuna == 'Maria Pinto' ~ 'María Pinto',
+Comuna == 'Melipilla' ~ 'Melipilla',
+Comuna == 'Padre Hurtado' ~ 'Padre Hurtado',
+Comuna == 'Paine' ~ 'Paine',
+Comuna == 'Pedro Aguirre Cerda' ~ 'Pedro Aguirre Cerda',
+Comuna == 'Peñaflor' ~ 'Peñaflor',
+Comuna == 'Peñalolen' ~ 'Peñalolén',
+Comuna == 'Pirque' ~ 'Pirque',
+Comuna == 'Providencia' ~ 'Providencia',
+Comuna == 'Pudahuel' ~ 'Pudahuel',
+Comuna == 'Puente Alto' ~ 'Puente Alto',
+Comuna == 'Quilicura' ~ 'Quilicura',
+Comuna == 'Quinta Normal' ~ 'Quinta Normal',
+Comuna == 'Recoleta' ~ 'Recoleta',
+Comuna == 'Renca' ~ 'Renca',
+Comuna == 'San Bernardo' ~ 'San Bernardo',
+Comuna == 'San Joaquin' ~ 'San Joaquín',
+Comuna == 'San Jose De Maipo' ~ 'San José De Maipo',
+Comuna == 'San Miguel' ~ 'San Miguel',
+Comuna == 'San Pedro' ~ 'San Pedro',
+Comuna == 'San Ramon' ~ 'San Ramón',
+Comuna == 'Santiago' ~ 'Santiago',
+Comuna == 'Talagante' ~ 'Talagante',
+Comuna == 'Tiltil' ~ 'Tiltil',
+Comuna == 'Vitacura' ~ 'Vitacura',
+Comuna == 'Ñuñoa' ~ 'Ñuñoa',
+Comuna == 'Alto Hospicio' ~ 'Alto Hospicio',
+Comuna == 'Camiña' ~ 'Camiña',
+Comuna == 'Colchane' ~ 'Colchane',
+Comuna == 'Huara' ~ 'Huara',
+Comuna == 'Iquique' ~ 'Iquique',
+Comuna == 'Pica' ~ 'Pica',
+Comuna == 'Pozo Almonte' ~ 'Pozo Almonte',
+Comuna == 'Algarrobo' ~ 'Algarrobo',
+Comuna == 'Cabildo' ~ 'Cabildo',
+Comuna == 'Calera' ~ 'Calera',
+Comuna == 'Calle Larga' ~ 'Calle Larga',
+Comuna == 'Cartagena' ~ 'Cartagena',
+Comuna == 'Casablanca' ~ 'Casablanca',
+Comuna == 'Catemu' ~ 'Catemu',
+Comuna == 'Concon' ~ 'Concón',
+Comuna == 'El Quisco' ~ 'El Quisco',
+Comuna == 'El Tabo' ~ 'El Tabo',
+Comuna == 'Hijuelas' ~ 'Hijuelas',
+Comuna == 'Isla De Pascua' ~ 'Isla De Pascua',
+Comuna == 'Juan Fernandez' ~ 'Juan Fernández',
+Comuna == 'La Cruz' ~ 'La Cruz',
+Comuna == 'La Ligua' ~ 'La Ligua',
+Comuna == 'Limache' ~ 'Limache',
+Comuna == 'Llay-Llay' ~ 'Llaillay',
+Comuna == 'Los Andes' ~ 'Los Andes',
+Comuna == 'Nogales' ~ 'Nogales',
+Comuna == 'Olmue' ~ 'Olmué',
+Comuna == 'Panquehue' ~ 'Panquehue',
+Comuna == 'Papudo' ~ 'Papudo',
+Comuna == 'Petorca' ~ 'Petorca',
+Comuna == 'Puchuncavi' ~ 'Puchuncaví',
+Comuna == 'Putaendo' ~ 'Putaendo',
+Comuna == 'Quillota' ~ 'Quillota',
+Comuna == 'Quilpue' ~ 'Quilpué',
+Comuna == 'Quintero' ~ 'Quintero',
+Comuna == 'Rinconada' ~ 'Rinconada',
+Comuna == 'San Antonio' ~ 'San Antonio',
+Comuna == 'San Esteban' ~ 'San Esteban',
+Comuna == 'San Felipe' ~ 'San Felipe',
+Comuna == 'Santa Maria' ~ 'Santa María',
+Comuna == 'Santo Domingo' ~ 'Santo Domingo',
+Comuna == 'Valparaiso' ~ 'Valparaíso',
+Comuna == 'Villa Alemana' ~ 'Villa Alemana',
+Comuna == 'Viña Del Mar' ~ 'Viña Del Mar',
+Comuna == 'Zapallar' ~ 'Zapallar',
+Comuna == 'Bulnes' ~ 'Bulnes',
+Comuna == 'Chillan' ~ 'Chillán',
+Comuna == 'Chillan Viejo' ~ 'Chillán Viejo',
+Comuna == 'Cobquecura' ~ 'Cobquecura',
+Comuna == 'Coelemu' ~ 'Coelemu',
+Comuna == 'Coihueco' ~ 'Coihueco',
+Comuna == 'El Carmen' ~ 'El Carmen',
+Comuna == 'Ninhue' ~ 'Ninhue',
+Comuna == 'Pemuco' ~ 'Pemuco',
+Comuna == 'Pinto' ~ 'Pinto',
+Comuna == 'Portezuelo' ~ 'Portezuelo',
+Comuna == 'Quillon' ~ 'Quillón',
+Comuna == 'Quirihue' ~ 'Quirihue',
+Comuna == 'Ranquil' ~ 'Ránquil',
+Comuna == 'San Carlos' ~ 'San Carlos',
+Comuna == 'San Fabian' ~ 'San Fabián',
+Comuna == 'San Ignacio' ~ 'San Ignacio',
+Comuna == 'San Nicolas' ~ 'San Nicolás',
+Comuna == 'Trehuaco' ~ 'Treguaco',
+Comuna == 'Yungay' ~ 'Yungay',
+Comuna == 'Ñiquen' ~ 'Ñiquén',
+Comuna == 'Domicilio en el Exterior' ~ NA,
+TRUE ~ Comuna
+    ))
+}
+
+# Lista de bases de datos
+bases2 <- list(
+  GORE2024_2 = GORE2024_2,
+  ALCALDES2024_2 = ALCALDES2024_2,
+  CONCEJALES2024_2 = CONCEJALES2024_2,
+  CORE2024_2 = CORE2024_2
+)
+
+# Aplicar la función a cada base de datos
+bases2 <- map(bases2, normalizar_comunas)
+
+# Extraer nuevamente las bases de datos con sus nombres originales
+GORE2024_2 <- bases2$GORE2024_2
+ALCALDES2024_2 <- bases2$ALCALDES2024_2
+CONCEJALES2024_2 <- bases2$CONCEJALES2024_2
+CORE2024_2 <- bases2$CORE2024_2
+```
+
+
+
+```{r}
+#Asignación de códigos de Comuna.
+normalizar_codigosComuna <- function(df) {
+  df %>%
+    mutate(cod_comuna = case_when(
+Comuna == 'Antofagasta' ~ 2101,
+Comuna == 'Calama' ~ 2201,
+Comuna == 'María Elena' ~ 2302,
+Comuna == 'Mejillones' ~ 2102,
+Comuna == 'Ollagüe' ~ 2202,
+Comuna == 'San Pedro De Atacama' ~ 2203,
+Comuna == 'Sierra Gorda' ~ 2103,
+Comuna == 'Taltal' ~ 2104,
+Comuna == 'Tocopilla' ~ 2301,
+Comuna == 'Arica' ~ 15101,
+Comuna == 'Camarones' ~ 15102,
+Comuna == 'General Lagos' ~ 15202,
+Comuna == 'Putre' ~ 15201,
+Comuna == 'Alto Del Carmen' ~ 3302,
+Comuna == 'Caldera' ~ 3102,
+Comuna == 'Chañaral' ~ 3201,
+Comuna == 'Copiapó' ~ 3101,
+Comuna == 'Diego De Almagro' ~ 3202,
+Comuna == 'Freirina' ~ 3303,
+Comuna == 'Huasco' ~ 3304,
+Comuna == 'Tierra Amarilla' ~ 3103,
+Comuna == 'Vallenar' ~ 3301,
+Comuna == 'Aysén' ~ 11201,
+Comuna == 'Chile Chico' ~ 11401,
+Comuna == 'Cisnes' ~ 11202,
+Comuna == 'Cochrane' ~ 11301,
+Comuna == 'Coyhaique' ~ 11101,
+Comuna == 'Guaitecas' ~ 11203,
+Comuna == 'Lago Verde' ~ 11102,
+Comuna == "o'higgins" ~ 11302,
+Comuna == 'Río Ibáñez' ~ 11402,
+Comuna == 'Tortel' ~ 11303,
+Comuna == 'Alto Biobío' ~ 8314,
+Comuna == 'Antuco' ~ 8302,
+Comuna == 'Arauco' ~ 8202,
+Comuna == 'Cabrero' ~ 8303,
+Comuna == 'Cañete' ~ 8203,
+Comuna == 'Chiguayante' ~ 8103,
+Comuna == 'Concepción' ~ 8101,
+Comuna == 'Contulmo' ~ 8204,
+Comuna == 'Coronel' ~ 8102,
+Comuna == 'Curanilahue' ~ 8205,
+Comuna == 'Florida' ~ 8104,
+Comuna == 'Hualpén' ~ 8112,
+Comuna == 'Hualqui' ~ 8105,
+Comuna == 'Laja' ~ 8304,
+Comuna == 'Lebu' ~ 8201,
+Comuna == 'Los Álamos' ~ 8206,
+Comuna == 'Los Angeles' ~ 8301,
+Comuna == 'Lota' ~ 8106,
+Comuna == 'Mulchén' ~ 8305,
+Comuna == 'Nacimiento' ~ 8306,
+Comuna == 'Negrete' ~ 8307,
+Comuna == 'Penco' ~ 8107,
+Comuna == 'Quilaco' ~ 8308,
+Comuna == 'Quilleco' ~ 8309,
+Comuna == 'San Pedro De La Paz' ~ 8108,
+Comuna == 'San Rosendo' ~ 8310,
+Comuna == 'Santa Bárbara' ~ 8311,
+Comuna == 'Santa Juana' ~ 8109,
+Comuna == 'Talcahuano' ~ 8110,
+Comuna == 'Tirúa' ~ 8207,
+Comuna == 'Tomé' ~ 8111,
+Comuna == 'Tucapel' ~ 8312,
+Comuna == 'Yumbel' ~ 8313,
+Comuna == 'Andacollo' ~ 4103,
+Comuna == 'Canela' ~ 4202,
+Comuna == 'Combarbalá' ~ 4302,
+Comuna == 'Coquimbo' ~ 4102,
+Comuna == 'Illapel' ~ 4201,
+Comuna == 'La Higuera' ~ 4104,
+Comuna == 'La Serena' ~ 4101,
+Comuna == 'Los Vilos' ~ 4203,
+Comuna == 'Monte Patria' ~ 4303,
+Comuna == 'Ovalle' ~ 4301,
+Comuna == 'Paiguano' ~ 4105,
+Comuna == 'Punitaqui' ~ 4304,
+Comuna == 'Río Hurtado' ~ 4305,
+Comuna == 'Salamanca' ~ 4204,
+Comuna == 'Vicuña' ~ 4106,
+Comuna == 'Angol' ~ 9201,
+Comuna == 'Carahue' ~ 9102,
+Comuna == 'Cholchol' ~ 9121,
+Comuna == 'Collipulli' ~ 9202,
+Comuna == 'Cunco' ~ 9103,
+Comuna == 'Curacautín' ~ 9203,
+Comuna == 'Curarrehue' ~ 9104,
+Comuna == 'Ercilla' ~ 9204,
+Comuna == 'Freire' ~ 9105,
+Comuna == 'Galvarino' ~ 9106,
+Comuna == 'Gorbea' ~ 9107,
+Comuna == 'Lautaro' ~ 9108,
+Comuna == 'Loncoche' ~ 9109,
+Comuna == 'Lonquimay' ~ 9205,
+Comuna == 'Los Sauces' ~ 9206,
+Comuna == 'Lumaco' ~ 9207,
+Comuna == 'Melipeuco' ~ 9110,
+Comuna == 'Nueva Imperial' ~ 9111,
+Comuna == 'Padre Las Casas' ~ 9112,
+Comuna == 'Perquenco' ~ 9113,
+Comuna == 'Pitrufquen' ~ 9114,
+Comuna == 'Pucón' ~ 9115,
+Comuna == 'Purén' ~ 9208,
+Comuna == 'Renaico' ~ 9209,
+Comuna == 'Saavedra' ~ 9116,
+Comuna == 'Temuco' ~ 9101,
+Comuna == 'Teodoro Schmidt' ~ 9117,
+Comuna == 'Toltén' ~ 9118,
+Comuna == 'Traiguén' ~ 9210,
+Comuna == 'Victoria' ~ 9211,
+Comuna == 'Vilcún' ~ 9119,
+Comuna == 'Villarrica' ~ 9120,
+Comuna == 'Chépica' ~ 6302,
+Comuna == 'Chimbarongo' ~ 6303,
+Comuna == 'Codegua' ~ 6102,
+Comuna == 'Coinco' ~ 6103,
+Comuna == 'Coltauco' ~ 6104,
+Comuna == 'Doñihue' ~ 6105,
+Comuna == 'Graneros' ~ 6106,
+Comuna == 'La Estrella' ~ 6202,
+Comuna == 'Las Cabras' ~ 6107,
+Comuna == 'Litueche' ~ 6203,
+Comuna == 'Lolol' ~ 6304,
+Comuna == 'Machalí' ~ 6108,
+Comuna == 'Malloa' ~ 6109,
+Comuna == 'Marchihue' ~ 6204,
+Comuna == 'Mostazal' ~ 6110,
+Comuna == 'Nancagua' ~ 6305,
+Comuna == 'Navidad' ~ 6205,
+Comuna == 'Olivar' ~ 6111,
+Comuna == 'Palmilla' ~ 6306,
+Comuna == 'Paredones' ~ 6206,
+Comuna == 'Peralillo' ~ 6307,
+Comuna == 'Peumo' ~ 6112,
+Comuna == 'Pichidegua' ~ 6113,
+Comuna == 'Pichilemu' ~ 6201,
+Comuna == 'Placilla' ~ 6308,
+Comuna == 'Pumanque' ~ 6309,
+Comuna == 'Quinta De Tilcoco' ~ 6114,
+Comuna == 'Rancagua' ~ 6101,
+Comuna == 'Rengo' ~ 6115,
+Comuna == 'Requínoa' ~ 6116,
+Comuna == 'San Fernando' ~ 6301,
+Comuna == 'San Vicente' ~ 6117,
+Comuna == 'Santa Cruz' ~ 6310,
+Comuna == 'Ancud' ~ 10202,
+Comuna == 'Calbuco' ~ 10102,
+Comuna == 'Castro' ~ 10201,
+Comuna == 'Chaitén' ~ 10401,
+Comuna == 'Chonchi' ~ 10203,
+Comuna == 'Cochamó' ~ 10103,
+Comuna == 'Curaco De Vélez' ~ 10204,
+Comuna == 'Dalcahue' ~ 10205,
+Comuna == 'Fresia' ~ 10104,
+Comuna == 'Frutillar' ~ 10105,
+Comuna == 'Futaleufú' ~ 10402,
+Comuna == 'Hualaihué' ~ 10403,
+Comuna == 'Llanquihue' ~ 10107,
+Comuna == 'Los Muermos' ~ 10106,
+Comuna == 'Maullín' ~ 10108,
+Comuna == 'Osorno' ~ 10301,
+Comuna == 'Palena' ~ 10404,
+Comuna == 'Puerto Montt' ~ 10101,
+Comuna == 'Puerto Octay' ~ 10302,
+Comuna == 'Puerto Varas' ~ 10109,
+Comuna == 'Puqueldón' ~ 10206,
+Comuna == 'Purranque' ~ 10303,
+Comuna == 'Puyehue' ~ 10304,
+Comuna == 'Queilén' ~ 10207,
+Comuna == 'Quellón' ~ 10208,
+Comuna == 'Quemchi' ~ 10209,
+Comuna == 'Quinchao' ~ 10210,
+Comuna == 'Río Negro' ~ 10305,
+Comuna == 'San Juan De La Costa' ~ 10306,
+Comuna == 'San Pablo' ~ 10307,
+Comuna == 'Corral' ~ 14102,
+Comuna == 'Futrono' ~ 14202,
+Comuna == 'La Unión' ~ 14201,
+Comuna == 'Lago Ranco' ~ 14203,
+Comuna == 'Lanco' ~ 14103,
+Comuna == 'Los Lagos' ~ 14104,
+Comuna == 'Máfil' ~ 14105,
+Comuna == 'Mariquina' ~ 14106,
+Comuna == 'Paillaco' ~ 14107,
+Comuna == 'Panguipulli' ~ 14108,
+Comuna == 'Río Bueno' ~ 14204,
+Comuna == 'Valdivia' ~ 14101,
+Comuna == 'Antártica' ~ 12202,
+Comuna == 'Cabo De Hornos' ~ 12201,
+Comuna == 'Laguna Blanca' ~ 12102,
+Comuna == 'Natales' ~ 12401,
+Comuna == 'Porvenir' ~ 12301,
+Comuna == 'Primavera' ~ 12302,
+Comuna == 'Punta Arenas' ~ 12101,
+Comuna == 'Río Verde' ~ 12103,
+Comuna == 'San Gregorio' ~ 12104,
+Comuna == 'Timaukel' ~ 12303,
+Comuna == 'Torres Del Paine' ~ 12402,
+Comuna == 'Cauquenes' ~ 7201,
+Comuna == 'Chanco' ~ 7202,
+Comuna == 'Colbún' ~ 7402,
+Comuna == 'Constitución' ~ 7102,
+Comuna == 'Curepto' ~ 7103,
+Comuna == 'Curicó' ~ 7301,
+Comuna == 'Empedrado' ~ 7104,
+Comuna == 'Hualañé' ~ 7302,
+Comuna == 'Licantén' ~ 7303,
+Comuna == 'Linares' ~ 7401,
+Comuna == 'Longaví' ~ 7403,
+Comuna == 'Maule' ~ 7105,
+Comuna == 'Molina' ~ 7304,
+Comuna == 'Parral' ~ 7404,
+Comuna == 'Pelarco' ~ 7106,
+Comuna == 'Pelluhue' ~ 7203,
+Comuna == 'Pencahue' ~ 7107,
+Comuna == 'Rauco' ~ 7305,
+Comuna == 'Retiro' ~ 7405,
+Comuna == 'Río Claro' ~ 7108,
+Comuna == 'Romeral' ~ 7306,
+Comuna == 'Sagrada Familia' ~ 7307,
+Comuna == 'San Clemente' ~ 7109,
+Comuna == 'San Javier' ~ 7406,
+Comuna == 'San Rafael' ~ 7110,
+Comuna == 'Talca' ~ 7101,
+Comuna == 'Teno' ~ 7308,
+Comuna == 'Vichuquén' ~ 7309,
+Comuna == 'Villa Alegre' ~ 7407,
+Comuna == 'Yerbas Buenas' ~ 7408,
+Comuna == 'Alhué' ~ 13502,
+Comuna == 'Buin' ~ 13402,
+Comuna == 'Calera De Tango' ~ 13403,
+Comuna == 'Cerrillos' ~ 13102,
+Comuna == 'Cerro Navia' ~ 13103,
+Comuna == 'Colina' ~ 13301,
+Comuna == 'Conchalí' ~ 13104,
+Comuna == 'Curacaví' ~ 13503,
+Comuna == 'El Bosque' ~ 13105,
+Comuna == 'El Monte' ~ 13602,
+Comuna == 'Estación Central' ~ 13106,
+Comuna == 'Huechuraba' ~ 13107,
+Comuna == 'Independencia' ~ 13108,
+Comuna == 'Isla De Maipo' ~ 13603,
+Comuna == 'La Cisterna' ~ 13109,
+Comuna == 'La Florida' ~ 13110,
+Comuna == 'La Granja' ~ 13111,
+Comuna == 'La Pintana' ~ 13112,
+Comuna == 'La Reina' ~ 13113,
+Comuna == 'Lampa' ~ 13302,
+Comuna == 'Las Condes' ~ 13114,
+Comuna == 'Lo Barnechea' ~ 13115,
+Comuna == 'Lo Espejo' ~ 13116,
+Comuna == 'Lo Prado' ~ 13117,
+Comuna == 'Macul' ~ 13118,
+Comuna == 'Maipú' ~ 13119,
+Comuna == 'María Pinto' ~ 13504,
+Comuna == 'Melipilla' ~ 13501,
+Comuna == 'Padre Hurtado' ~ 13604,
+Comuna == 'Paine' ~ 13404,
+Comuna == 'Pedro Aguirre Cerda' ~ 13121,
+Comuna == 'Peñaflor' ~ 13605,
+Comuna == 'Peñalolén' ~ 13122,
+Comuna == 'Pirque' ~ 13202,
+Comuna == 'Providencia' ~ 13123,
+Comuna == 'Pudahuel' ~ 13124,
+Comuna == 'Puente Alto' ~ 13201,
+Comuna == 'Quilicura' ~ 13125,
+Comuna == 'Quinta Normal' ~ 13126,
+Comuna == 'Recoleta' ~ 13127,
+Comuna == 'Renca' ~ 13128,
+Comuna == 'San Bernardo' ~ 13401,
+Comuna == 'San Joaquín' ~ 13129,
+Comuna == 'San José De Maipo' ~ 13203,
+Comuna == 'San Miguel' ~ 13130,
+Comuna == 'San Pedro' ~ 13505,
+Comuna == 'San Ramón' ~ 13131,
+Comuna == 'Santiago' ~ 13101,
+Comuna == 'Talagante' ~ 13601,
+Comuna == 'Tiltil' ~ 13303,
+Comuna == 'Vitacura' ~ 13132,
+Comuna == 'Ñuñoa' ~ 13120,
+Comuna == 'Alto Hospicio' ~ 1107,
+Comuna == 'Camiña' ~ 1402,
+Comuna == 'Colchane' ~ 1403,
+Comuna == 'Huara' ~ 1404,
+Comuna == 'Iquique' ~ 1101,
+Comuna == 'Pica' ~ 1405,
+Comuna == 'Pozo Almonte' ~ 1401,
+Comuna == 'Algarrobo' ~ 5602,
+Comuna == 'Cabildo' ~ 5402,
+Comuna == 'Calera' ~ 5502,
+Comuna == 'Calle Larga' ~ 5302,
+Comuna == 'Cartagena' ~ 5603,
+Comuna == 'Casablanca' ~ 5102,
+Comuna == 'Catemu' ~ 5702,
+Comuna == 'Concón' ~ 5103,
+Comuna == 'El Quisco' ~ 5604,
+Comuna == 'El Tabo' ~ 5605,
+Comuna == 'Hijuelas' ~ 5503,
+Comuna == 'Isla De Pascua' ~ 5201,
+Comuna == 'Juan Fernández' ~ 5104,
+Comuna == 'La Cruz' ~ 5504,
+Comuna == 'La Ligua' ~ 5401,
+Comuna == 'Limache' ~ 5802,
+Comuna == 'Llaillay' ~ 5703,
+Comuna == 'Los Andes' ~ 5301,
+Comuna == 'Nogales' ~ 5506,
+Comuna == 'Olmué' ~ 5803,
+Comuna == 'Panquehue' ~ 5704,
+Comuna == 'Papudo' ~ 5403,
+Comuna == 'Petorca' ~ 5404,
+Comuna == 'Puchuncaví' ~ 5105,
+Comuna == 'Putaendo' ~ 5705,
+Comuna == 'Quillota' ~ 5501,
+Comuna == 'Quilpué' ~ 5801,
+Comuna == 'Quintero' ~ 5107,
+Comuna == 'Rinconada' ~ 5303,
+Comuna == 'San Antonio' ~ 5601,
+Comuna == 'San Esteban' ~ 5304,
+Comuna == 'San Felipe' ~ 5701,
+Comuna == 'Santa María' ~ 5706,
+Comuna == 'Santo Domingo' ~ 5606,
+Comuna == 'Valparaíso' ~ 5101,
+Comuna == 'Villa Alemana' ~ 5804,
+Comuna == 'Viña Del Mar' ~ 5109,
+Comuna == 'Zapallar' ~ 5405,
+Comuna == 'Bulnes' ~ 16102,
+Comuna == 'Chillán' ~ 16101,
+Comuna == 'Chillán Viejo' ~ 16103,
+Comuna == 'Cobquecura' ~ 16202,
+Comuna == 'Coelemu' ~ 16203,
+Comuna == 'Coihueco' ~ 16302,
+Comuna == 'El Carmen' ~ 16104,
+Comuna == 'Ninhue' ~ 16204,
+Comuna == 'Pemuco' ~ 16105,
+Comuna == 'Pinto' ~ 16106,
+Comuna == 'Portezuelo' ~ 16205,
+Comuna == 'Quillón' ~ 16107,
+Comuna == 'Quirihue' ~ 16201,
+Comuna == 'Ránquil' ~ 16206,
+Comuna == 'San Carlos' ~ 16301,
+Comuna == 'San Fabián' ~ 16304,
+Comuna == 'San Ignacio' ~ 16108,
+Comuna == 'San Nicolás' ~ 16305,
+Comuna == 'Treguaco' ~ 16207,
+Comuna == 'Yungay' ~ 16109,
+Comuna == 'Ñiquén' ~ 16303
+    ))
+}
+
+
+# Lista de bases de datos
+bases3 <- list(
+  GORE2024_2 = GORE2024_2,
+  ALCALDES2024_2 = ALCALDES2024_2,
+  CONCEJALES2024_2 = CONCEJALES2024_2,
+  CORE2024_2 = CORE2024_2
+)
+
+# Aplicar la función a cada base de datos
+bases3 <- map(bases3, normalizar_codigosComuna)
+
+# Extraer nuevamente las bases de datos con sus nombres originales
+GORE2024_2 <- bases3$GORE2024_2
+ALCALDES2024_2 <- bases3$ALCALDES2024_2
+CONCEJALES2024_2 <- bases3$CONCEJALES2024_2
+CORE2024_2 <- bases3$CORE2024_2
+```
+
+
+
+
+4. Tablas de análisis.
+
+```{r}
+#GORE 2024
+tabla_total_GORE <- GORE2024_2 %>%
+  summarise(
+    `Voto válido` = sum(`Voto válido`, na.rm = TRUE),
+    `Voto nulo` = sum(`Voto nulo`, na.rm = TRUE),
+    `Voto blanco` = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "Tipo de voto", values_to = "Cantidad") %>%
+  mutate(
+    Porcentaje = (Cantidad / sum(Cantidad)) * 100
+  ) %>%
+  bind_rows(tibble(`Tipo de voto` = "Total", Cantidad = sum(.$Cantidad), Porcentaje = 100))
+
+
+write_xlsx(tabla_total_GORE, "Tabla N°1.1 - Tipo de Voto Total - Gobernadores Regionales 2024.xlsx")
+
+#ALCALDE 2024
+tabla_total_alcalde <- ALCALDES2024_2 %>%
+  summarise(
+    `Voto válido` = sum(`Voto válido`, na.rm = TRUE),
+    `Voto nulo` = sum(`Voto nulo`, na.rm = TRUE),
+    `Voto blanco` = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "Tipo de voto", values_to = "Cantidad") %>%
+  mutate(
+    Porcentaje = (Cantidad / sum(Cantidad)) * 100
+  ) %>%
+  bind_rows(tibble(`Tipo de voto` = "Total", Cantidad = sum(.$Cantidad), Porcentaje = 100))
+
+
+write_xlsx(tabla_total_alcalde, "Tabla N°1.2 - Tipo de Voto Total - Alcaldes 2024.xlsx")
+
+
+
+#CONCEJALES 2024
+tabla_total_concejales <- CONCEJALES2024_2 %>%
+  summarise(
+    `Voto válido` = sum(`Voto válido`, na.rm = TRUE),
+    `Voto nulo` = sum(`Voto nulo`, na.rm = TRUE),
+    `Voto blanco` = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "Tipo de voto", values_to = "Cantidad") %>%
+  mutate(
+    Porcentaje = (Cantidad / sum(Cantidad)) * 100
+  ) %>%
+  bind_rows(tibble(`Tipo de voto` = "Total", Cantidad = sum(.$Cantidad), Porcentaje = 100))
+
+
+write_xlsx(tabla_total_concejales, "Tabla N°1.3 - Tipo de Voto Total - Concejales 2024.xlsx")
+
+
+#CORE 2024
+tabla_total_CORE <- CORE2024_2 %>%
+  summarise(
+    `Voto válido` = sum(`Voto válido`, na.rm = TRUE),
+    `Voto nulo` = sum(`Voto nulo`, na.rm = TRUE),
+    `Voto blanco` = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "Tipo de voto", values_to = "Cantidad") %>%
+  mutate(
+    Porcentaje = (Cantidad / sum(Cantidad)) * 100
+  ) %>%
+  bind_rows(tibble(`Tipo de voto` = "Total", Cantidad = sum(.$Cantidad), Porcentaje = 100))
+
+
+write_xlsx(tabla_total_CORE, "Tabla N°1.4 - Tipo de Voto Total - CORE 2024.xlsx")
+```
+
+
+5. Base a nivel de comuna
+```{r}
+#5.1 GORE.
+GORE2024_Comuna <- GORE2024_2 %>%
+  group_by(Región, `Nro Región`, cod_comuna, Comuna) %>%
+  summarise(
+    Voto_válido_GORE = sum(`Voto válido`, na.rm = TRUE),
+    Voto_nulo_GORE = sum(`Voto nulo`, na.rm = TRUE),
+    Voto_blanco_GORE = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+#5.2 Alcalde
+ALCALDE2024_Comuna <- ALCALDES2024_2 %>%
+  group_by(Región, `Nro Región`, cod_comuna, Comuna) %>%
+  summarise(
+    Voto_válido_ALCALDE = sum(`Voto válido`, na.rm = TRUE),
+    Voto_nulo_ALCALDE = sum(`Voto nulo`, na.rm = TRUE),
+    Voto_blanco_ALCALDE = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+#5.3 CONCEJALES
+CONCEJALES2024_Comuna <- CONCEJALES2024_2 %>%
+  group_by(Región, `Nro Región`, cod_comuna, Comuna) %>%
+  summarise(
+    Voto_válido_CONCEJAL = sum(`Voto válido`, na.rm = TRUE),
+    Voto_nulo_CONCEJAL = sum(`Voto nulo`, na.rm = TRUE),
+    Voto_blanco_CONCEJAL = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+#5.3 CORE
+CORE2024_Comuna <- CORE2024_2 %>%
+  group_by(Región, `Nro Región`, cod_comuna, Comuna) %>%
+  summarise(
+    Voto_válido_CORE = sum(`Voto válido`, na.rm = TRUE),
+    Voto_nulo_CORE = sum(`Voto nulo`, na.rm = TRUE),
+    Voto_blanco_CORE = sum(`Voto blanco`, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+#Seleccionar casos
+ALCALDE2024_Comuna <- ALCALDE2024_Comuna %>% 
+  select(cod_comuna,Voto_válido_ALCALDE,Voto_nulo_ALCALDE,Voto_blanco_ALCALDE)
+
+CONCEJALES2024_Comuna <- CONCEJALES2024_Comuna %>% 
+  select(cod_comuna,Voto_válido_CONCEJAL,Voto_nulo_CONCEJAL,Voto_blanco_CONCEJAL)
+
+CORE2024_Comuna <- CORE2024_Comuna %>% 
+  select(cod_comuna,Voto_válido_CORE,Voto_nulo_CORE,Voto_blanco_CORE)
+
+#Unir bases
+base_comuna_elec2024 <- GORE2024_Comuna %>%
+  left_join(ALCALDE2024_Comuna, by = "cod_comuna") %>%
+  left_join(CONCEJALES2024_Comuna, by = "cod_comuna") %>%
+  left_join(CORE2024_Comuna, by = "cod_comuna")
+  
+
+```
+
+```{r}
+#Creación variable macrozona.
+base_comuna_elec2024 <- base_comuna_elec2024 %>% 
+  mutate(macrozona=case_when(
+    `Nro Región`==1~"Norte",
+    `Nro Región`==15~"Norte",
+    `Nro Región`==2~"Norte",
+    `Nro Región`==3~"Norte",
+    `Nro Región`==4~"Centro",
+    `Nro Región`==5~"Centro",
+    `Nro Región`==6~"Centro",
+    `Nro Región`==13~"Metropolitana",
+    `Nro Región`==7~"Centro-Sur",
+    `Nro Región`==16~"Centro-Sur",
+    `Nro Región`==8~"Centro-Sur",
+    `Nro Región`==9~"Sur",
+    `Nro Región`==10~"Sur",
+    `Nro Región`==14~"Sur",
+    `Nro Región`==11~"Austral",
+    `Nro Región`==12~"Austral"))
+```
+
+
+
+6. Bases con información adicional.
+
+6.1 Base Pobreza Multidimensional CASEN 2022:
+Importación BBDD
+```{r}
+Datos_CASEN <- read_excel("data/Datos Comunales/Pobreza_Multidimensional_2022.xlsx")
+
+Datos_CASEN <- Datos_CASEN %>%
+  rename(cod_comuna = CODIGO)
+```
+
+Unión de bases
+```{r}
+#filtrar bases a unir: 1) Base CASEN Pobreza Multidimensional
+Datos_CASEN2 <- Datos_CASEN %>% 
+  dplyr::select(cod_comuna,Porc_Pob_Mult2022 = `Porcentaje de personas en situación de pobreza multidimensional 2022`)
+
+Datos_CASEN2 <- Datos_CASEN2 %>%
+  mutate(Porc_Pob_Mult2022=(Porc_Pob_Mult2022*100))
+
+Datos_CASEN2 <- Datos_CASEN2 %>%
+  mutate(Tipo_Com_Pob=case_when(
+    Porc_Pob_Mult2022<19.8~"G1",
+    Porc_Pob_Mult2022>=19.8 & Porc_Pob_Mult2022<24.85 ~"G2",
+    Porc_Pob_Mult2022>=24.85 & Porc_Pob_Mult2022<=31.41 ~"G3",
+    Porc_Pob_Mult2022>31.41 ~"G4"))
+
+#Unir bases "GORE2024_2_Comuna" y "Datos_CASEN2"
+base_comuna_elec2024 <- base_comuna_elec2024 %>%
+  left_join(Datos_CASEN2, by = "cod_comuna")
+```
+6.2. Base Resumen Comunal con datos urbano-rural y escolaridad.
+
+```{r}
+DATOSCOMUNALES <- read_excel("data/Datos Comunales/DATOSCOMUNALES2.xlsx")
+
+DATOSCOMUNALES2 <- DATOSCOMUNALES %>%
+  rename(cod_comuna = CODIGO) %>% 
+  dplyr::select(cod_comuna,TIPO_COMUNA,BIENESTAR:Escolaridad)
+
+#Unir bases "GORE2024_2_Comuna" y "Datos comunales 2"
+base_comuna_elec2024 <- base_comuna_elec2024 %>%
+  left_join(DATOSCOMUNALES2, by = "cod_comuna")
+
+```
+
+6.3. Base de proyecciones de población.
+
+```{r}
+Proyecciones_2025 <- read_excel("data/Datos Comunales/estimaciones-y-proyecciones-2002-2035-comunas.xlsx")
+
+#Unir bases "GORE2024_2_Comuna" y "Proyecciones de población 2025"
+base_comuna_elec2024 <- base_comuna_elec2024 %>%
+  left_join(Proyecciones_2025, by = "cod_comuna")
+```
+
+*********Se remueven los objetos que no se utilizarán
+```{r}
+rm(Base_resumen,Base_resumen2,Datos_CASEN,Datos_CASEN2,DATOSCOMUNALES,DATOSCOMUNALES2,pleb2023,pleb2023_2,pleb2023_Extr,pleb2023_Extr_2,GORE2024_2_Comuna,Proyecciones_2025,resumen_votos,resumen_votos2,resumen_votos3,tabla_tipo_padron,tabla_total,tabla_total_Chile,tabla_total_Extranjero)
+```
+
+Revisar totales para verificar que todos los datos siguen bien con las tranformaciones.
+
+Votos Blancos: 976.788
+Votos Nulos: 1.351.323
+Votos válidos: 10.794.150
+
+
+```{r}
+tabla_revision <- base_comuna_elec2024 %>%
+  summarise(
+    Voto_válido_GORE = sum(Voto_válido_GORE, na.rm = TRUE),
+    Voto_nulo_GORE = sum(Voto_nulo_GORE, na.rm = TRUE),
+    Voto_blanco_GORE = sum(Voto_blanco_GORE, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+print(tabla_revision)
+#Se revisan los datos, los cuales siguen estando correctos.
+```
+*Transformaciones pendientes.
+```{r}
+#Realizar una división de las comunas del país por 4 o 5 tramos de población y comparar la variación de participación. 
+#Se usará la clasificación propuesta por la encuesta Bicentenario de la PUC.
+#(Encuesta Bicentenario)
+#Muy grandes: +200.000 hab. 
+#Grandes: Entre 100.000 y 200.000 hab. 
+#Medianas: Entre 20.000 y 100.000 hab. 
+#Pequeñas: Menos de 20.000 hab.
+
+#Creación de la variable "Tipo_Tamaño_Comuna" en Base_resumen3
+base_comuna_elec2024 <- base_comuna_elec2024 %>% 
+  mutate(Tipo_Tamaño_Comuna=case_when(
+    Población2025>200000~"Comuna muy grande",
+    Población2025<=200000 & Población2025>=100000~"Comuna grande",
+    Población2025<100000 & Población2025>=20000~"Comuna mediana",
+    Población2025<20000~"Comuna pequeña"))
+
+base_comuna_elec2024$Tipo_Tamaño_Comuna <- factor(base_comuna_elec2024$Tipo_Tamaño_Comuna, 
+                                   levels = c("Comuna muy grande", "Comuna grande", 
+                                              "Comuna mediana", "Comuna pequeña"))
+
+table(base_comuna_elec2024$Tipo_Tamaño_Comuna)
+table(base_comuna_elec2024$Tipo_Com_Pob)
+table(base_comuna_elec2024$TIPO_COMUNA)
+```
+
+
+
+7.1 Tabla N°4: Votos inválidos por tipo de comuna, 
+
+```{r}
+# Calcular la tabla resumen
+tabla_tamaño_comuna <- base_comuna_elec2024 %>%
+  group_by(Tipo_Tamaño_Comuna) %>%
+  summarise(
+    Voto_válido_GORE = sum(Voto_válido_GORE, na.rm = TRUE),
+    Voto_nulo_GORE = sum(Voto_nulo_GORE, na.rm = TRUE),
+    Voto_blanco_GORE = sum(Voto_blanco_GORE, na.rm = TRUE),
+    Total_votacion_GORE = (Voto_válido_GORE+Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_invalido_GORE = (Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_válido_ALCALDE = sum(Voto_válido_ALCALDE, na.rm = TRUE),
+    Voto_nulo_ALCALDE = sum(Voto_nulo_ALCALDE, na.rm = TRUE),
+    Voto_blanco_ALCALDE = sum(Voto_blanco_ALCALDE, na.rm = TRUE),
+    Total_votacion_ALCALDE = (Voto_válido_ALCALDE+Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_invalido_ALCALDE = (Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_válido_CONCEJAL = sum(Voto_válido_CONCEJAL, na.rm = TRUE),
+    Voto_nulo_CONCEJAL = sum(Voto_nulo_CONCEJAL, na.rm = TRUE),
+    Voto_blanco_CONCEJAL = sum(Voto_blanco_CONCEJAL, na.rm = TRUE),
+    Total_votacion_CONCEJAL = (Voto_válido_CONCEJAL+Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_invalido_CONCEJAL = (Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_válido_CORE = sum(Voto_válido_CORE, na.rm = TRUE),
+    Voto_nulo_CORE = sum(Voto_nulo_CORE, na.rm = TRUE),
+    Voto_blanco_CORE = sum(Voto_blanco_CORE, na.rm = TRUE),
+    Total_votacion_CORE = (Voto_válido_CORE+Voto_nulo_CORE+Voto_blanco_CORE),
+    Voto_invalido_CORE = (Voto_nulo_CORE+Voto_blanco_CORE),
+    Porc_inválidos_GORE = ((Voto_invalido_GORE/Total_votacion_GORE)*100),
+    Porc_inválidos_ALCALDE = ((Voto_invalido_ALCALDE/Total_votacion_ALCALDE)*100),
+    Porc_inválidos_CONCEJAL = ((Voto_invalido_CONCEJAL/Total_votacion_CONCEJAL)*100),
+    Porc_inválidos_CORE = ((Voto_invalido_CORE/Total_votacion_CORE)*100)
+    ) %>%
+  ungroup()
+
+write_xlsx(tabla_tamaño_comuna, "Tabla N°4 - Votos inválidos según tamaño de comuna - Gobernadores Regionales 2024.xlsx")
+```
+
+
+7.2 Tabla N°5: Votos inválidos por ZONA de comuna.
+
+```{r}
+# Calcular la tabla resumen
+tabla_zona_comuna <- base_comuna_elec2024 %>%
+  group_by(TIPO_COMUNA) %>%
+  summarise(
+    Voto_válido_GORE = sum(Voto_válido_GORE, na.rm = TRUE),
+    Voto_nulo_GORE = sum(Voto_nulo_GORE, na.rm = TRUE),
+    Voto_blanco_GORE = sum(Voto_blanco_GORE, na.rm = TRUE),
+    Total_votacion_GORE = (Voto_válido_GORE+Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_invalido_GORE = (Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_válido_ALCALDE = sum(Voto_válido_ALCALDE, na.rm = TRUE),
+    Voto_nulo_ALCALDE = sum(Voto_nulo_ALCALDE, na.rm = TRUE),
+    Voto_blanco_ALCALDE = sum(Voto_blanco_ALCALDE, na.rm = TRUE),
+    Total_votacion_ALCALDE = (Voto_válido_ALCALDE+Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_invalido_ALCALDE = (Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_válido_CONCEJAL = sum(Voto_válido_CONCEJAL, na.rm = TRUE),
+    Voto_nulo_CONCEJAL = sum(Voto_nulo_CONCEJAL, na.rm = TRUE),
+    Voto_blanco_CONCEJAL = sum(Voto_blanco_CONCEJAL, na.rm = TRUE),
+    Total_votacion_CONCEJAL = (Voto_válido_CONCEJAL+Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_invalido_CONCEJAL = (Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_válido_CORE = sum(Voto_válido_CORE, na.rm = TRUE),
+    Voto_nulo_CORE = sum(Voto_nulo_CORE, na.rm = TRUE),
+    Voto_blanco_CORE = sum(Voto_blanco_CORE, na.rm = TRUE),
+    Total_votacion_CORE = (Voto_válido_CORE+Voto_nulo_CORE+Voto_blanco_CORE),
+    Voto_invalido_CORE = (Voto_nulo_CORE+Voto_blanco_CORE),
+    Porc_inválidos_GORE = ((Voto_invalido_GORE/Total_votacion_GORE)*100),
+    Porc_inválidos_ALCALDE = ((Voto_invalido_ALCALDE/Total_votacion_ALCALDE)*100),
+    Porc_inválidos_CONCEJAL = ((Voto_invalido_CONCEJAL/Total_votacion_CONCEJAL)*100),
+    Porc_inválidos_CORE = ((Voto_invalido_CORE/Total_votacion_CORE)*100)
+    ) %>%
+  ungroup()
+
+write_xlsx(tabla_zona_comuna, "Tabla N°5 - Votos inválidos según zona de comuna - Gobernadores Regionales 2024.xlsx")
+```
+
+
+7.3 Tabla N°6: Votos inválidos por pobreza de comuna, solo para casos de Chile.
+
+```{r}
+# Calcular la tabla resumen
+tabla_pobreza_comuna <- base_comuna_elec2024 %>%
+  group_by(Tipo_Com_Pob) %>%
+  summarise(
+    Voto_válido_GORE = sum(Voto_válido_GORE, na.rm = TRUE),
+    Voto_nulo_GORE = sum(Voto_nulo_GORE, na.rm = TRUE),
+    Voto_blanco_GORE = sum(Voto_blanco_GORE, na.rm = TRUE),
+    Total_votacion_GORE = (Voto_válido_GORE+Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_invalido_GORE = (Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_válido_ALCALDE = sum(Voto_válido_ALCALDE, na.rm = TRUE),
+    Voto_nulo_ALCALDE = sum(Voto_nulo_ALCALDE, na.rm = TRUE),
+    Voto_blanco_ALCALDE = sum(Voto_blanco_ALCALDE, na.rm = TRUE),
+    Total_votacion_ALCALDE = (Voto_válido_ALCALDE+Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_invalido_ALCALDE = (Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_válido_CONCEJAL = sum(Voto_válido_CONCEJAL, na.rm = TRUE),
+    Voto_nulo_CONCEJAL = sum(Voto_nulo_CONCEJAL, na.rm = TRUE),
+    Voto_blanco_CONCEJAL = sum(Voto_blanco_CONCEJAL, na.rm = TRUE),
+    Total_votacion_CONCEJAL = (Voto_válido_CONCEJAL+Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_invalido_CONCEJAL = (Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_válido_CORE = sum(Voto_válido_CORE, na.rm = TRUE),
+    Voto_nulo_CORE = sum(Voto_nulo_CORE, na.rm = TRUE),
+    Voto_blanco_CORE = sum(Voto_blanco_CORE, na.rm = TRUE),
+    Total_votacion_CORE = (Voto_válido_CORE+Voto_nulo_CORE+Voto_blanco_CORE),
+    Voto_invalido_CORE = (Voto_nulo_CORE+Voto_blanco_CORE),
+    Porc_inválidos_GORE = ((Voto_invalido_GORE/Total_votacion_GORE)*100),
+    Porc_inválidos_ALCALDE = ((Voto_invalido_ALCALDE/Total_votacion_ALCALDE)*100),
+    Porc_inválidos_CONCEJAL = ((Voto_invalido_CONCEJAL/Total_votacion_CONCEJAL)*100),
+    Porc_inválidos_CORE = ((Voto_invalido_CORE/Total_votacion_CORE)*100)
+    ) %>%
+  ungroup()
+
+write_xlsx(tabla_pobreza_comuna, "Tabla N°6 - Votos inválidos según pobreza de comuna - Gobernadores Regionales 2024.xlsx")
+```
+
+7.4 Tabla N°7: Votos inválidos por macrozona, solo para casos de Chile.
+
+```{r}
+# Calcular la tabla resumen
+tabla_macrozona <- base_comuna_elec2024 %>%
+  group_by(macrozona) %>%
+  summarise(
+    Voto_válido_GORE = sum(Voto_válido_GORE, na.rm = TRUE),
+    Voto_nulo_GORE = sum(Voto_nulo_GORE, na.rm = TRUE),
+    Voto_blanco_GORE = sum(Voto_blanco_GORE, na.rm = TRUE),
+    Total_votacion_GORE = (Voto_válido_GORE+Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_invalido_GORE = (Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_válido_ALCALDE = sum(Voto_válido_ALCALDE, na.rm = TRUE),
+    Voto_nulo_ALCALDE = sum(Voto_nulo_ALCALDE, na.rm = TRUE),
+    Voto_blanco_ALCALDE = sum(Voto_blanco_ALCALDE, na.rm = TRUE),
+    Total_votacion_ALCALDE = (Voto_válido_ALCALDE+Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_invalido_ALCALDE = (Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_válido_CONCEJAL = sum(Voto_válido_CONCEJAL, na.rm = TRUE),
+    Voto_nulo_CONCEJAL = sum(Voto_nulo_CONCEJAL, na.rm = TRUE),
+    Voto_blanco_CONCEJAL = sum(Voto_blanco_CONCEJAL, na.rm = TRUE),
+    Total_votacion_CONCEJAL = (Voto_válido_CONCEJAL+Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_invalido_CONCEJAL = (Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_válido_CORE = sum(Voto_válido_CORE, na.rm = TRUE),
+    Voto_nulo_CORE = sum(Voto_nulo_CORE, na.rm = TRUE),
+    Voto_blanco_CORE = sum(Voto_blanco_CORE, na.rm = TRUE),
+    Total_votacion_CORE = (Voto_válido_CORE+Voto_nulo_CORE+Voto_blanco_CORE),
+    Voto_invalido_CORE = (Voto_nulo_CORE+Voto_blanco_CORE),
+    Porc_inválidos_GORE = ((Voto_invalido_GORE/Total_votacion_GORE)*100),
+    Porc_inválidos_ALCALDE = ((Voto_invalido_ALCALDE/Total_votacion_ALCALDE)*100),
+    Porc_inválidos_CONCEJAL = ((Voto_invalido_CONCEJAL/Total_votacion_CONCEJAL)*100),
+    Porc_inválidos_CORE = ((Voto_invalido_CORE/Total_votacion_CORE)*100)
+    ) %>%
+  ungroup()
+
+write_xlsx(tabla_macrozona, "Tabla N°7 - Votos inválidos según macrozona - Gobernadores Regionales 2024.xlsx")
+```
+
+
+
+8. Cálculo de voto inválido por comuna y mapas.
+```{r}
+base_comuna_elec2024 <- base_comuna_elec2024 %>% 
+  mutate(Total_votacion_GORE = (Voto_válido_GORE+Voto_nulo_GORE+Voto_blanco_GORE),
+    Voto_invalido_GORE = (Voto_nulo_GORE+Voto_blanco_GORE),
+    Total_votacion_ALCALDE = (Voto_válido_ALCALDE+Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Voto_invalido_ALCALDE = (Voto_nulo_ALCALDE+Voto_blanco_ALCALDE),
+    Total_votacion_CONCEJAL = (Voto_válido_CONCEJAL+Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Voto_invalido_CONCEJAL = (Voto_nulo_CONCEJAL+Voto_blanco_CONCEJAL),
+    Total_votacion_CORE = (Voto_válido_CORE+Voto_nulo_CORE+Voto_blanco_CORE),
+    Voto_invalido_CORE = (Voto_nulo_CORE+Voto_blanco_CORE),
+    Porc_inválidos_GORE = ((Voto_invalido_GORE/Total_votacion_GORE)*100),
+    Porc_inválidos_ALCALDE = ((Voto_invalido_ALCALDE/Total_votacion_ALCALDE)*100),
+    Porc_inválidos_CONCEJAL = ((Voto_invalido_CONCEJAL/Total_votacion_CONCEJAL)*100),
+    Porc_inválidos_CORE = ((Voto_invalido_CORE/Total_votacion_CORE)*100))
+
+Base_mapas <- base_comuna_elec2024
+
+write_xlsx(Base_mapas, "Base_mapas.xlsx")
+
+```
+
+Creación de Mapas
+
+```{r}
+comunas <- st_read("data/Mapas Comunales/comunas.shp")
+str(comunas)
+```
+
+```{r}
+Base_mapas <- Base_mapas %>% 
+  dplyr::select(cod_comuna, Comuna,TIPO_COMUNA,Región,macrozona,Porc_inválidos_GORE,Porc_inválidos_ALCALDE,Porc_inválidos_CONCEJAL,Porc_inválidos_CORE)
+
+Base_mapas2 <- comunas %>%
+  inner_join(Base_mapas, by = "cod_comuna")
+
+Base_mapas2 <- Base_mapas2 %>% filter(codregion != 0) # Eliminamos la región 0 ya que no podremos georeferenciarla, es básicamente un NA
+
+###Paleta de colores
+bins_part<- c(0,5,10,15,20,25,30,35,40,45)
+pal_par_mc <- colorBin(rev(brewer.pal(11, "RdYlGn")),  # Invierte los colores
+                       domain = Base_mapas2$Porc_invalidos, 
+                       bins = bins_part, 
+                       na.color = "transparent")
+```
+
+
+
+```{r}
+Base_mapas2 <- st_as_sf(Base_mapas2, coords = c("lon", "lat"), crs = 4326)
+```
+
+
+Graficos RM:
+```{r}
+Base_mapas_RM <- Base_mapas2 %>%
+  filter(macrozona=="Metropolitana")
+
+Base_mapas_RM_wgs84 <- st_transform(Base_mapas_RM, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_RM_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+Graficos Norte:
+```{r}
+Base_mapas_Norte <- Base_mapas2 %>%
+  filter(macrozona=="Norte")
+
+Base_mapas_Norte_wgs84 <- st_transform(Base_mapas_Norte, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Norte_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+
+Graficos Centro:
+```{r}
+Base_mapas_Centro <- Base_mapas2 %>%
+  filter(macrozona=="Centro")
+
+Base_mapas_Centro_wgs84 <- st_transform(Base_mapas_Centro, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Centro_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+Graficos Centro Sur:
+```{r}
+Base_mapas_CentroSur <- Base_mapas2 %>%
+  filter(macrozona=="Centro-Sur")
+
+Base_mapas_CentroSur_wgs84 <- st_transform(Base_mapas_CentroSur, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_CentroSur_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+
+Graficos Sur:
+```{r}
+Base_mapas_Sur <- Base_mapas2 %>%
+  filter(macrozona=="Sur")
+
+Base_mapas_Sur_wgs84 <- st_transform(Base_mapas_Sur, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Sur_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+Graficos Austral:
+```{r}
+Base_mapas_Austral <- Base_mapas2 %>%
+  filter(macrozona=="Austral")
+
+Base_mapas_Austral_wgs84 <- st_transform(Base_mapas_Austral, crs = 4326) # Transformamos el mapa a WGS84. Es como "traducir" las coordenadas de un sistema a otro para que todos los elementos del mapa web (base map, polígonos, marcadores, etc.) "hablen el mismo idioma" geográfico.
+
+# Creamos el mapa interactivo
+leaflet(data = Base_mapas_Austral_wgs84) %>%
+  addTiles() %>% # Agregamos el mapa base, en este caso, el mapa de OpenStreetMap
+  addPolygons(
+    fillColor = ~pal_par_mc(Porc_inválidos_GORE),
+    fillOpacity = 0.9, # Opacidad del relleno
+    color = "white", # Color del borde
+    weight = 1, # Grosor del borde
+    popup = ~paste("Comuna:", Comuna.x, "<br>Porcentaje Votos Inválidos GORE:", sprintf("%.2f%%", Porc_inválidos_GORE), "<br>Porcentaje Votos Inválidos Alcaldes:", sprintf("%.2f%%", Porc_inválidos_ALCALDE), "<br>Porcentaje Votos Inválidos Concejales:", sprintf("%.2f%%", Porc_inválidos_CONCEJAL), "<br>Porcentaje Votos Inválidos CORE:", sprintf("%.2f%%", Porc_inválidos_CORE))
+  ) %>%
+  addLegend(
+    position = "bottomright", # Ubicación de la leyenda (derecha e inferior)
+    pal = pal_par_mc,
+    values = ~Porc_inválidos_GORE, # Valores a mostrar en la escala
+    title = "<div style='white-space: nowrap;'>Porcentaje Votos inválidos</div>",
+    opacity = 1)
+
+```
+
+
+####################PENDIENTE DE ACTUALIZAR DESDE AQUI EN ADELANTE##########################
+
+Tablas de 5 comunas con mayor y menor porcentaje de votos inválidos.
+```{r}
+########################################REGION METROPOLITANA.
+Tabla_RM1 <- Base_mapas_RM %>% 
+  dplyr::select(Comuna.x, Region, Porc_inválidos_GORE)
+
+Tabla_RM1<-as.data.frame(Tabla_RM1[order(Tabla_RM1$Porc_inválidos_GORE, decreasing = TRUE), ])
+
+#Se seleccional las 5 comunas con mayor y menor variación
+Vot_invalidos_RM_Mayor_5 <-head(Tabla_RM1,5)
+Vot_invalidos_RM_Menor_5 <-tail(Tabla_RM1,5)
+
+write_xlsx(Vot_invalidos_RM_Mayor_5, "Tabla N°8 - Vot_invalidos_RM_Mayor_5 - Gobernadores Regionales 2024.xlsx")
+write_xlsx(Vot_invalidos_RM_Menor_5, "Tabla N°9 - Vot_invalidos_RM_Menor_5 - Gobernadores Regionales 2024.xlsx")
+
+
+
+########################################ZONA NORTE.
+Tabla_Norte1 <- Base_mapas_Norte %>% 
+  dplyr::select(Comuna.x, Region, Porc_inválidos_GORE)
+
+Tabla_Norte1<-as.data.frame(Tabla_Norte1[order(Tabla_Norte1$Porc_inválidos_GORE, decreasing = TRUE), ])
+
+#Se seleccional las 5 comunas con mayor y menor variación
+Vot_invalidos_Norte_Mayor_5 <-head(Tabla_Norte1,5)
+Vot_invalidos_Norte_Menor_5 <-tail(Tabla_Norte1,5)
+
+write_xlsx(Vot_invalidos_Norte_Mayor_5, "Tabla N°10 - Vot_invalidos_Norte_Mayor_5 - Gobernadores Regionales 2024.xlsx")
+write_xlsx(Vot_invalidos_Norte_Menor_5, "Tabla N°11 - Vot_invalidos_Norte_Menor_5 - Gobernadores Regionales 2024.xlsx")
+
+
+########################################ZONA CENTRO
+Tabla_Centro1 <- Base_mapas_Centro %>% 
+  dplyr::select(Comuna.x, Region, Porc_inválidos_GORE)
+
+Tabla_Centro1<-as.data.frame(Tabla_Centro1[order(Tabla_Centro1$Porc_inválidos_GORE, decreasing = TRUE), ])
+
+#Se seleccional las 5 comunas con mayor y menor variación
+Vot_invalidos_Centro_Mayor_5 <-head(Tabla_Centro1,5)
+Vot_invalidos_Centro_Menor_5 <-tail(Tabla_Centro1,5)
+
+write_xlsx(Vot_invalidos_Centro_Mayor_5, "Tabla N°12 - Vot_invalidos_Centro_Mayor_5 - Gobernadores Regionales 2024.xlsx")
+write_xlsx(Vot_invalidos_Centro_Menor_5, "Tabla N°13 - Vot_invalidos_Centro_Menor_5 - Gobernadores Regionales 2024.xlsx")
+
+########################################ZONA CENTRO-SUR
+Tabla_CentroSur1 <- Base_mapas_CentroSur %>% 
+  dplyr::select(Comuna.x, Region, Porc_inválidos_GORE)
+
+Tabla_CentroSur1<-as.data.frame(Tabla_CentroSur1[order(Tabla_CentroSur1$Porc_inválidos_GORE, decreasing = TRUE), ])
+
+#Se seleccional las 5 comunas con mayor y menor variación
+Vot_invalidos_CentroSur_Mayor_5 <-head(Tabla_CentroSur1,5)
+Vot_invalidos_CentroSur_Menor_5 <-tail(Tabla_CentroSur1,5)
+
+write_xlsx(Vot_invalidos_CentroSur_Mayor_5, "Tabla N°14 - Vot_invalidos_CentroSur_Mayor_5 - Gobernadores Regionales 2024.xlsx")
+write_xlsx(Vot_invalidos_CentroSur_Menor_5, "Tabla N°15 - Vot_invalidos_CentroSur_Menor_5 - Gobernadores Regionales 2024.xlsx")
+
+
+########################################ZONA SUR
+Tabla_Sur1 <- Base_mapas_Sur %>% 
+  dplyr::select(Comuna.x, Region, Porc_inválidos_GORE)
+
+Tabla_Sur1<-as.data.frame(Tabla_Sur1[order(Tabla_Sur1$Porc_inválidos_GORE, decreasing = TRUE), ])
+
+#Se seleccional las 5 comunas con mayor y menor variación
+Vot_invalidos_Sur_Mayor_5 <-head(Tabla_Sur1,5)
+Vot_invalidos_Sur_Menor_5 <-tail(Tabla_Sur1,5)
+
+write_xlsx(Vot_invalidos_Sur_Mayor_5, "Tabla N°16 - Vot_invalidos_Sur_Mayor_5 - Gobernadores Regionales 2024.xlsx")
+write_xlsx(Vot_invalidos_Sur_Menor_5, "Tabla N°17 - Vot_invalidos_Sur_Menor_5 - Gobernadores Regionales 2024.xlsx")
+
+########################################ZONA AUSTRAL
+Tabla_Austral1 <- Base_mapas_Austral %>% 
+  dplyr::select(Comuna.x, Region, Porc_inválidos_GORE)
+
+Tabla_Austral1<-as.data.frame(Tabla_Austral1[order(Tabla_Austral1$Porc_inválidos_GORE, decreasing = TRUE), ])
+
+#Se seleccional las 5 comunas con mayor y menor variación
+Vot_invalidos_Austral_Mayor_5 <-head(Tabla_Austral1,5)
+Vot_invalidos_Austral_Menor_5 <-tail(Tabla_Austral1,5)
+
+write_xlsx(Vot_invalidos_Austral_Mayor_5, "Tabla N°18 - Vot_invalidos_Austral_Mayor_5 - Gobernadores Regionales 2024.xlsx")
+write_xlsx(Vot_invalidos_Austral_Menor_5, "Tabla N°19 - Vot_invalidos_Austral_Menor_5 - Gobernadores Regionales 2024.xlsx")
+
+```
